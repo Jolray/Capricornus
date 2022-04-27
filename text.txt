@@ -1,0 +1,219 @@
+from turtle import end_fill
+from numpy import append
+import jieba
+import re
+import numpy as np
+from gensim import corpora, models, similarities
+from pprint import pprint
+import gensim
+import time
+import matplotlib
+from gensim import corpora
+import matplotlib.pyplot as plt
+from gensim.models.coherencemodel import CoherenceModel
+from gensim.models.ldamodel import LdaModel
+import json
+import multiprocessing
+#import pyLDAvis.gensim as gensimvis
+import pyLDAvis.gensim
+# 你需要的打开txt文件，文件名要修改，然后代码和你要打开的txt放到同一个文件里
+# region
+# 文章内容
+
+
+def read_txt(filepath):
+    file = open(filepath, 'r', encoding='utf-8')
+    txt = file.readlines()
+    return txt
+
+
+def cut_word(text):
+    # 精准模式
+    jieba_list = jieba.cut(text, cut_all=False)
+    return jieba_list
+
+
+def seg_sentence(list_txt):
+    # 读取停用词表
+    stopwords = stopwords = read_txt('停用词.txt')
+    seg_txt = [w for w in list_txt if w not in stopwords]
+    return seg_txt
+
+
+content1 = []
+XHS = []  # 存储所有内容的一个列表
+dic = read_txt('《北京必去》content_infos1.txt')  # 按照行读取全部的txt，dic是一个字符串
+content = []  # 定义一个列表存储评论
+# 文章评论
+dic1 = read_txt('《北京必去》comments_info1.txt')  # 按照行读取全部的txt，dic1是一个字符串
+
+for d in dic:  # 循环打开上面那个dic，格式是一个字符串，可以写一个print看看
+    # 这是我的一个弱智操作，保存的时候，在每一行前面都加了省略号，这步是把她去掉
+    d1 = d.strip('-------------------------------')
+    d2 = eval(d1)  # 字符串转换为值
+    desc = d2['note_desc']  # 文章内容字段
+    title = d2['note_title']  # 文章标题字段  这两部分是主要的文本
+    # 正则表达式只保留汉字，字母和数字 如果你只想保留汉字，就把这句替换为res1 = re.sub("[^\u4e00-\u9fa5]", '', desc)，连通下面那句一起
+    res1 = re.sub("[^\u4e00-\u9fa5]", '', desc)
+    res2 = re.sub("[^\u4e00-\u9fa5]", '', title)
+    res11 = cut_word(res1)
+    res12 = seg_sentence(res11)
+    res21 = cut_word(res2)
+    res22 = seg_sentence(res21)
+    content1.append(res12)
+    # d2['note_desc'] = res12  #将提出后的内容再添加回字典原位置
+    # d2['note_title'] = res22  # 将去除停留词后的添加回字典原位置
+    # XHS .append(d2)  # 追加命令 在列表里追加值，等于把txt都存到了这个d3列表里，列表里是字典格式，每一个字典代表一篇文章
+# 输出内容看看  没有给你保存为txt，现在d3是一个列表，列表里有字典格式，你要调用就可以d3[0].["key"]就可以调用第一篇文章相应的内容了，key是字典的键#ebdregion
+'''
+t1 = dic1[0].strip('----------------评论----------------')
+t2 = eval(t1)
+temp = t2['id']
+# 评论内容
+t = []
+for com in dic1:
+    # 按照上面同样的处理，将评论进行分词和去除停留词
+    com1 = com.strip('----------------评论----------------')
+    com2 = eval(com1)
+    desc1 = com2['content']  # 评论
+    desc2 = com2['sub_comments']  # 该评论下的子评论
+    id = com2['id']
+    res3 = re.sub("[^\u4e00-\u9fa5]", '', desc1)
+    res4 = re.sub("[^\u4e00-\u9fa5]", '', desc2)
+    res21 = cut_word(res3)  # 分词
+    res22 = seg_sentence(res21)  # 去除停留词
+    if temp == id:  # 如果文章id一样，合并为同一评论
+        t.extend(res22)  # t中存储着同一文章的若干评论的分词后的内容
+        continue
+    for xhs in XHS:
+        if xhs['note_id'] == temp:  # 通过id将文章内容和评论进行匹配
+            xhs['comment'] = t  # 所有的评论去除停留词后的列表，补充到XHS列表中
+            print(xhs)
+            with open('comments_info3.txt', 'a', encoding='utf-8') as f:
+                f.write(json.dumps(xhs, ensure_ascii=False))
+                f.write('\n')
+    temp = id
+    with open('comments_info2.txt', 'a', encoding='utf-8') as f:
+        f.write(json.dumps(t, ensure_ascii=False))
+        f.write('\n')
+    t = []'''
+
+
+# print(XHS)#最终包含文章内容，评论等的列表
+"""介绍一下XHS的组织形式，是一个列表，里面有很多字典，每个字典代表一篇文章，
+包含有["note_id"]、["note_title"]、["note_decs"]、["comment"]、文章点赞数、
+收藏数、评论数、分享数、发布时间、POI等内容，调用方式为
+for xhs in XHS:
+    y=xhs["所要调取的key"] 相信小天才已经很会了 组织成这种，等待后续操作。
+"""
+M = len(content1)  # 文章数目
+print('文本数目：%d个' % M)
+print('正在建立词典 ------')
+# 建立字典
+dictionary = corpora.Dictionary(content1)  # content1为去除停用词后
+V = len(dictionary)  # 字典长度
+
+print('正在计算文本向量 ------')
+# 转换文本数据为索引，并计数
+corpus = [dictionary.doc2bow(text) for text in content1]
+
+print('正在计算文档TF-IDF ------')
+# 计算tf-idf值
+corpus_tfidf = models.TfidfModel(corpus)[corpus]
+
+# 计算coherence，得到最佳主题数目
+
+'''
+def coherence(num_topics):
+    lda = LdaModel(corpus_tfidf, num_topics=num_topics,id2word=dictionary,alpha=0.01, eta=0.01, minimum_probability=0.001,update_every=1, chunksize=100, passes=1)
+    ldacm = CoherenceModel(model=lda, texts=content1,dictionary=dictionary, coherence='c_v')
+    return ldacm.get_coherence()
+
+for num_topics in range(1, 6):
+
+    lda_model = gensim.models.ldamodel.LdaModel(corpus=corpus_tfidf, num_topics=num_topics)
+
+    coherence_model = gensim.models.CoherenceModel(model=lda_model, texts=content1,dictionary=dictionary)
+
+    coherence_value = coherence_model.get_coherence()
+    print(coherence_value)'''
+
+'''def perplexity(num_topics):
+    ldamodel = LdaModel(corpus_tfidf, num_topics=num_topics, id2word = dictionary, passes=30)
+    print(ldamodel.print_topics(num_topics=num_topics, num_words=15))
+    print(ldamodel.log_perplexity(corpus))
+    return ldamodel.log_perplexity(corpus)'''
+
+'''if __name__ == '__main__':
+    multiprocessing.freeze_support()
+
+    #multiprocessing.freeze_support()
+    x = range(1, 10)  # 50个主题
+    print("00000000")
+    y = [coherence(i) for i in x]
+    print("1111111")
+    plt.plot(x, y)
+    plt.xlabel('主题数目')
+    plt.ylabel('coherence大小')
+    plt.rcParams['font.sans-serif'] = ['SimHei']
+    matplotlib.rcParams['axes.unicode_minus'] = False
+    plt.title('主题-coherence变化情况')
+    plt.show()'''
+print('LDA模型拟合推断 ------')
+# 训练模型
+
+num_topics = 45  # 50个主题
+lda = models.LdaModel(corpus_tfidf, num_topics=num_topics, id2word=dictionary,
+                      alpha=0.01, eta=0.01, minimum_probability=0.001,
+                      update_every=1, chunksize=100, passes=1)
+# 随机打印某10个文档的主题
+num_show_topic = 10  # 每个文档显示前几个主题
+# print('结果:10个文档的主题分布:--')
+doc_topics = lda.get_document_topics(corpus_tfidf)  # 所有文档的主题分布概率
+idx = np.arange(M)  # 文章数目M
+# np.random.shuffle(idx)  # 随机生成
+#idx = idx[:10]
+for i in idx:  # 输出全部的
+    topic = np.array(doc_topics[i])
+    topic_distribute = np.array(topic[:, 1])
+    # print topic_distribute
+    topic_idx = topic_distribute.argsort(
+    )[:-num_show_topic - 1:-1]  # 从小到大排序 返回索引值
+    print('第%d个文档的前%d个主题:' % (i, num_show_topic)), topic_idx
+    print(topic_distribute[topic_idx])
+    print(topic_idx)
+
+    with open('tpoic.txt', 'a', encoding='utf-8') as f:
+        f.write('第%d个文档的前%d个主题:' % (i, num_show_topic))
+        f.write('\n')
+        f.write(str(topic_distribute[topic_idx]))  # , ensure_ascii=False
+        f.write('主题：')
+        f.write(str(topic_idx))
+        f.write('\n')
+
+num_show_term = 10  # 每个主题显示10个词
+print('结果：每个主题的词分布：--')
+for topic_id in range(num_topics):
+    print('主题#%d:\t' % topic_id)  # 主题数
+    term_distribute_all = lda.get_topic_terms(topicid=topic_id)
+    term_distribute = term_distribute_all[:num_show_term]
+    term_distribute = np.array(term_distribute)
+    term_id = term_distribute[:, 0].astype(np.int)
+    print('词：\t', )
+    for t in term_id:
+        print(dictionary.id2token[t], )
+    print('\n概率:\t', term_distribute[:, 1])
+    with open('tpoic1.txt', 'a', encoding='utf-8') as f:
+        f.write('主题#%d:\t' % topic_id)
+        f.write('\n')
+        f.write('词：\t')
+        for t in term_id:
+            f.write(json.dumps(dictionary.id2token[t], ensure_ascii=False))
+        f.write('\n概率:\t',)
+        f.write(str(term_distribute[:, 1]))
+        f.write('\n')
+# 可视化 可是失败了
+# pyLDAvis.enable_notebook()
+data = pyLDAvis.gensim.prepare(lda, corpus_tfidf, dictionary, mds='mmds')
+pyLDAvis.save_html(data, '3topic.html')
+pyLDAvis.show(data)
